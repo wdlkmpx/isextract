@@ -2,8 +2,15 @@
 #include "dostime.h"
 
 #include <utime.h>
+#include <string.h>
 #include <iostream>
 #include <ctime>
+
+typedef struct _dir_list dirlist;
+struct _dir_list {
+    uint32_t count;
+    dirlist * next;
+};
 
 const uint32_t signature = 0x8C655D13;
 const int32_t data_start = 255;
@@ -68,19 +75,33 @@ void InstallShield::open(std::string& filename)
     //find the toc and work out how many files we have in the archive
     m_fh.seekg(toc_address, std::ios_base::beg);
     
-    std::vector<uint32_t> dir_files;
-    
-    for(uint32_t i = 0; i < dir_count; i++) {
-        dir_files.push_back(parseDirs());
+    dirlist * dirfiles = NULL;
+    dirlist * currentdir = NULL, * dirtemp = NULL;
+
+    for(uint32_t i = 0; i < dir_count; i++)
+    {
+        dirtemp = (dirlist*) calloc (1, sizeof(dirlist));
+        dirtemp->count = parseDirs();
+        if (!dirfiles) {
+           dirfiles = dirtemp;
+        } else if (currentdir) {
+           currentdir->next = dirtemp;
+        }
+        currentdir = dirtemp;
     }
 
     //parse the file entries in the toc to get filenames, size and location
-    for(uint32_t i = 0; i < dir_files.size(); i++){
-        for(uint32_t j = 0; j < dir_files[i]; j++) {
+    currentdir = dirfiles;
+    while (currentdir)
+    {
+        for(uint32_t j = 0; j < currentdir->count; j++) {
             parseFiles();
         }
+        dirtemp = currentdir->next;
+        free (currentdir);
+        currentdir = dirtemp;
     }
-    
+
     m_fh.close();
 }
 
@@ -98,8 +119,8 @@ uint32_t InstallShield::parseDirs()
     m_fh.read(reinterpret_cast<char*>(&fcount), sizeof(uint16_t));
     m_fh.read(reinterpret_cast<char*>(&chksize), sizeof(uint16_t));
     m_fh.read(reinterpret_cast<char*>(&nlen), sizeof(uint16_t));
-    
-    std::cout << "We have " << fcount << " files\n";
+
+    printf ("We have %u files\n", fcount);
     
     //skip the name of the dir, we just want the files
     m_fh.seekg(nlen, std::ios_base::cur);
@@ -198,21 +219,20 @@ bool InstallShield::extractAll(const std::string& dir)
 void InstallShield::listFiles()
 {
     t_file_iter it = m_files.begin();
-    std::string fname;
+    const char * fname;
     uint32_t size;
     uint32_t csize;
     time_t time;
     
-    std::cout << "Archive contains the following files: \n";
+    printf ("Archive contains the following files: \n");
     
     while(it != m_files.end()) {
         time = dos2unixtime(it->second.datetime);
-        fname = it->first;
+        fname = it->first.c_str();
         size = it->second.uncompressed_size;
         csize = it->second.compressed_size;
         
-        
-        std::cout << fname << " " << csize << " " << ctime(&time) << "\n";
+        printf ("%s %u %s\n", fname, csize, ctime(&time));
         
         it++;
     }
