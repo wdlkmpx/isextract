@@ -169,7 +169,7 @@ bool InstallShield::extractFile(const std::string& filename, const std::string& 
     
     fseek(ifh, m_current_file->second.offset + m_dataoffset, SEEK_SET);
     
-    blast(inf, ifh, outf, ofh);
+    blast(inf, ifh, outf, ofh, NULL, NULL);
     
     fclose(ifh);
     fclose(ofh);
