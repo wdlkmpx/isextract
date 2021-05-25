@@ -21,6 +21,12 @@
   Mark Adler    madler@alumni.caltech.edu
  */
 
+#ifndef __BLAST_H
+#define __BLAST_H
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /*
  * blast() decompresses the PKWare Data Compression Library (DCL) compressed
@@ -81,3 +87,9 @@ int blast(blast_in infun, void *inhow, blast_out outfun, void *outhow,
  * At the bottom of blast.c is an example program that uses blast() that can be
  * compiled to produce a command-line decompression filter by defining TEST.
  */
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* __BLAST_H */

@@ -3,8 +3,8 @@ LIBS=$(OPTLIBS)
 PREFIX?=/usr/local
 CC=g++
 
-SOURCES=$(wildcard src/**/*.cpp src/*.cpp)
-OBJECTS=$(patsubst %.cpp,%.o,$(SOURCES))
+SOURCES=src/blast.c src/dostime.cpp src/isextract.cpp src/main.cpp
+OBJECTS=src/blast.o src/dostime.o src/isextract.o src/main.o
 
 TEST_SRC=$(wildcard tests/*_tests.cpp)
 TESTS=$(patsubst %.cpp,%,$(TEST_SRC))
