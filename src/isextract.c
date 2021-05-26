@@ -158,8 +158,6 @@ ishield3 * ishield3_open (const char * filename)
         }
     }
 
-    fclose (is3->archive_fd);
-    is3->archive_fd = NULL;
     return is3;
 }
 
@@ -286,7 +284,7 @@ static bool extractFile (ishield3 * is3, const char *find_filestr, is3_file * se
 {
     //C style IO here because its easier to make work with Blast
     is3_file * file;
-    FILE* ifh;
+    FILE* ifh = is3->archive_fd;
     FILE* ofh;
     struct utimbuf tstamp;
 
@@ -301,7 +299,7 @@ static bool extractFile (ishield3 * is3, const char *find_filestr, is3_file * se
     char * of_name = (char*) malloc (of_size + 50);
     snprintf (of_name, of_size-2, "%s%c%s", outdir, DIR_SEPARATOR, file->name);
 
-    ifh = fopen (is3->archive_fname, "rb");
+    //ifh = fopen (is3->archive_fname, "rb");
     ofh = fopen (of_name, "wb");
     
     if (!ifh || !ofh) {
@@ -312,9 +310,7 @@ static bool extractFile (ishield3 * is3, const char *find_filestr, is3_file * se
     
     blast(inf, ifh, outf, ofh, NULL, NULL);
     
-    fclose(ifh);
     fclose(ofh);
-    
     tstamp.actime = dos2unixtime (file->datetime);
     tstamp.modtime = tstamp.actime;
     utime (of_name, &tstamp);
