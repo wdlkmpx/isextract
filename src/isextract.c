@@ -35,6 +35,7 @@ struct _is3_file
     uint32_t uncompressed_size;
     uint32_t offset;
     uint32_t datetime;
+    is3_dir  * parentdir;
     is3_file * next;
 };
 
@@ -79,7 +80,7 @@ const uint32_t SEC_MASK = 0x0000001F;*/
 // =================================================================
 
 static is3_dir * parseDirs  (ishield3 * is3);
-static void      parseFiles (ishield3 * is3);
+static void      parseFiles (ishield3 * is3, is3_dir * dir);
 static bool extractFile (ishield3 * is3, const char *find_filestr, is3_file * selected_file, const char *outdir);
 
 // blast.c callbacks
@@ -153,7 +154,7 @@ ishield3 * ishield3_open (const char * filename)
     for (; currentdir; currentdir = currentdir->next)
     {
         for(uint32_t j = 0; j < currentdir->file_count; j++) {
-            parseFiles (is3);
+            parseFiles (is3, currentdir);
         }
     }
 
@@ -228,7 +229,7 @@ static is3_dir * parseDirs (ishield3 * is3)
 }
 
 
-static void parseFiles (ishield3 * is3)
+static void parseFiles (ishield3 * is3, is3_dir * dir)
 {
     is3_file * file = (is3_file*) calloc (1, sizeof(is3_file));
     is3_file * it;
@@ -249,17 +250,20 @@ static void parseFiles (ishield3 * is3)
     fseek (is3->archive_fd, 4, SEEK_CUR);
     fread ((void*) &(namelen), sizeof(uint8_t), 1, is3->archive_fd);
 
+    if (dir) {
+        file->parentdir = dir;
+    }
+
     //read in file name, ensure null termination;
-    uint8_t buffer[namelen + 1];
-    fread ((void*) buffer, sizeof(uint8_t), namelen, is3->archive_fd);
-    buffer[namelen] = '\0';
-    file->name = strdup ((char*) buffer);
+    file->name = (char *) calloc (namelen+2, sizeof(uint8_t));
+    fread ((void*) file->name, sizeof(uint8_t), namelen, is3->archive_fd);
 
     //complete out file entry with the offset within the body.
     file->offset = is3->datasize;
-    
+
+    file->next = NULL;
     if (!is3->files) {
-        is3->files = file;
+        is3->files = file; /* first file */
     } else {
        // append
        for (it = is3->files; it->next; it = it->next) { }
@@ -347,9 +351,13 @@ void ishield3_listFiles (ishield3 * is3)
         fname = it->name;
         //size = it->uncompressed_size;
         csize = it->compressed_size;
-        
-        printf ("%s %u %s\n", fname, csize, ctime(&time));
-        
+
+        if (it->parentdir && it->parentdir->name[0]) {
+            // ctime() adds a '\n'
+            printf ("%s\\%s %u %s", it->parentdir->name, fname, csize, ctime(&time));
+        } else {
+            printf ("%s %u %s", fname, csize, ctime(&time));
+        }
         it = it->next;
     }
 }
