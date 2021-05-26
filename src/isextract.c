@@ -213,7 +213,8 @@ static is3_dir * parseDirs (ishield3 * is3)
     fread ((void*) &chksize, sizeof(uint16_t), 1, is3->archive_fd);
     fread ((void*) &nlen,    sizeof(uint16_t), 1, is3->archive_fd);
 
-    dir->name = (char *) calloc (nlen + 3, sizeof(uint8_t));
+    dir->name = (char *) malloc (sizeof(uint8_t) * nlen + 3);
+    dir->name[nlen] = 0;
     fread ((void*) dir->name, sizeof(uint8_t), nlen, is3->archive_fd);
     
     //skip to end of chunk
@@ -257,7 +258,8 @@ static void parseFiles (ishield3 * is3, is3_dir * dir)
     }
 
     //read in file name, ensure null termination;
-    file->name = (char *) calloc (namelen+2, sizeof(uint8_t));
+    file->name = (char *) malloc (sizeof(uint8_t) * namelen + 3);
+    file->name[namelen] = 0;
     fread ((void*) file->name, sizeof(uint8_t), namelen, is3->archive_fd);
 
     //complete out file entry with the offset within the body.
@@ -316,7 +318,8 @@ static bool extractFile (ishield3 * is3, const char *find_filestr, is3_file * se
     tstamp.actime = dos2unixtime (file->datetime);
     tstamp.modtime = tstamp.actime;
     utime (of_name, &tstamp);
-    
+    free (of_name);
+
     return true;
 }
 
