@@ -1,6 +1,8 @@
 #include <stdio.h>
-#include "isextract.h"
+#include <stdlib.h>
 #include <iostream>
+
+#include "isextract.h"
 
 void printUse()
 {
@@ -13,7 +15,7 @@ int main(int argc, char** argv)
     std::string mode;
     const char * filepath;
     const char * outdir = "./";
-    InstallShield infile;
+    ishield3 * infile;
     
     if(argc < 3) {
         printUse();
@@ -27,20 +29,22 @@ int main(int argc, char** argv)
         outdir = argv[3];
     }
     
-    try {
-        infile.open(filepath);
-    } catch (const char* msg) {
-        std::cout << "Error: " << msg << "\n";
+    infile = ishield3_open (filepath);
+    if (!infile) {
+        std::cout << "Error opening file\n";
         return -1;
     }
     
     if(mode == "x"){
-        infile.extractAll(outdir);
+        ishield3_extractAll (infile, outdir);
     } else if(mode == "l") {
-        infile.listFiles();
+        ishield3_listFiles (infile);
     } else {
         printUse();
     }
+
+    ishield3_close (infile);
+    infile = NULL;
     
     return 0;
 }

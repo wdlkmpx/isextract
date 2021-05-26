@@ -3,7 +3,7 @@ LIBS=$(OPTLIBS)
 PREFIX?=/usr/local
 CC=g++
 
-SOURCES=src/blast.c src/isextract.cpp src/main.cpp
+SOURCES=src/blast.c src/isextract.c src/main.cpp
 OBJECTS=src/blast.o src/isextract.o src/main.o
 
 TEST_SRC=$(wildcard tests/*_tests.cpp)
