@@ -25,6 +25,7 @@ struct _is3_dir {
     is3_dir * next;
 };
 
+
 typedef struct _is3_file is3_file;
 struct _is3_file
 {
@@ -36,6 +37,21 @@ struct _is3_file
     is3_file * next;
 };
 
+
+typedef struct __attribute__((__packed__)) _is3_header
+{
+    uint32_t signature;
+    /* */ uint8_t ignore0[8];
+    uint16_t file_count;
+    /* */ uint8_t ignore1[4];
+    uint32_t archive_size;
+    /* */ uint8_t ignore2[19];
+    uint32_t toc_address;
+    /* */ uint8_t ignore3[4];
+    uint16_t dir_count;
+} is3_header;
+
+
 struct _ishield3
 {
     is3_file * files;
@@ -43,6 +59,7 @@ struct _ishield3
     FILE * archive_fd;
     uint32_t dataoffset;
     uint32_t datasize;
+    is3_header header;
 };
 
 // =================================================================
@@ -82,10 +99,8 @@ static int outf(void *how, unsigned char *buf, unsigned len)
 
 ishield3 * ishield3_open (const char * filename)
 {
-    uint32_t sig;
-    int32_t toc_address;
-    uint16_t dir_count;
     FILE * fd;
+    size_t read_bytes;
 
     fd = fopen (filename, "rb");
     if (!fd) {
@@ -100,29 +115,28 @@ ishield3 * ishield3_open (const char * filename)
     is3->datasize   = 0;
     is3->files      = NULL;
 
-    // read signature
-    fread (&sig, sizeof(uint32_t), 1, is3->archive_fd);
+    //get some basic info on where stuff is in file
+    read_bytes = fread (&(is3->header), 1, sizeof(is3->header), is3->archive_fd);
+    if (read_bytes < sizeof(is3->header))
+    {
+       fprintf (stderr, "Error reading %s\n", filename);
+       ishield3_close (is3);
+       return NULL;
+    }
     
     //test if we have what we think we have
-    if (sig != signature) {
+    if (is3->header.signature != signature) {
         fprintf (stderr, "Not a valid InstallShield 3 archive\n");
         return NULL;
     }
-    
-    //get some basic info on where stuff is in file
-    fseek (is3->archive_fd, 37, SEEK_CUR);
-    fread ((void*) &toc_address, sizeof(int32_t), 1, is3->archive_fd);
-    
-    fseek (is3->archive_fd, 4, SEEK_CUR);
-    fread ((void*) &dir_count, sizeof(uint16_t), 1, is3->archive_fd);
 
     //find the toc and work out how many files we have in the archive
-    fseek (is3->archive_fd, toc_address, SEEK_SET);
+    fseek (is3->archive_fd, is3->header.toc_address, SEEK_SET);
 
     is3_dir * dirfiles = NULL;
     is3_dir * currentdir = NULL, * dirtemp = NULL;
 
-    for(uint32_t i = 0; i < dir_count; i++)
+    for (uint32_t i = 0; i < is3->header.dir_count; i++)
     {
         dirtemp = (is3_dir*) calloc (1, sizeof(is3_dir));
         dirtemp->count = parseDirs(is3);
@@ -147,6 +161,7 @@ ishield3 * ishield3_open (const char * filename)
     }
 
     fclose (is3->archive_fd);
+    is3->archive_fd = NULL;
     return is3;
 }
 
@@ -167,6 +182,9 @@ void ishield3_close (ishield3 * is3)
            free (it);
            it = nextfile;
        }
+    }
+    if (is3->archive_fd) {
+       fclose (is3->archive_fd);
     }
     if (is3) {
        free (is3);
