@@ -234,6 +234,7 @@ static void parseFiles (ishield3 * is3, is3_dir * dir)
     is3_file * file = (is3_file*) calloc (1, sizeof(is3_file));
     is3_file * it;
     uint16_t chksize;
+    uint16_t date1, date2;
     uint8_t namelen;
 
     fseek (is3->archive_fd, 3, SEEK_CUR);
@@ -241,8 +242,9 @@ static void parseFiles (ishield3 * is3, is3_dir * dir)
     fread ((void*) &(file->compressed_size),   sizeof(uint32_t), 1, is3->archive_fd);
 
     fseek (is3->archive_fd, 4, SEEK_CUR);
-    fread ((void*) (&(file->datetime) + 2), sizeof(uint16_t), 1, is3->archive_fd);
-    fread ((void*)  &(file->datetime),      sizeof(uint16_t), 1, is3->archive_fd);
+    fread ((void*) &(date1), sizeof(uint16_t), 1, is3->archive_fd);
+    fread ((void*) &(date2), sizeof(uint16_t), 1, is3->archive_fd);
+    file->datetime = (date1 << 16) + date2;
 
     fseek (is3->archive_fd, 4, SEEK_CUR);
     fread ((void*) &(chksize), sizeof(uint16_t), 1, is3->archive_fd);
