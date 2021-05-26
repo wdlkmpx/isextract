@@ -5,6 +5,8 @@
 #include <string.h>
 #include <stdint.h>
 
+#include <sys/stat.h>
+
 #include "isextract.h"
 #include "dostime.h"
 
@@ -282,11 +284,14 @@ static void parseFiles (ishield3 * is3, is3_dir * dir)
 
 static bool extractFile (ishield3 * is3, const char *find_filestr, is3_file * selected_file, const char *outdir)
 {
-    //C style IO here because its easier to make work with Blast
+    int extractdirs = 1; //change to 0 to test without directories
     is3_file * file;
     FILE* ifh = is3->archive_fd;
     FILE* ofh;
     struct utimbuf tstamp;
+
+    char * of_name, * of_dir, *p;
+    size_t of_size;
 
     if (selected_file) {
         file = selected_file;
@@ -295,9 +300,27 @@ static bool extractFile (ishield3 * is3, const char *find_filestr, is3_file * se
         // TODO
     }
 
-    size_t of_size = strlen(outdir) + strlen(file->name) + 50;
-    char * of_name = (char*) malloc (of_size + 50);
-    snprintf (of_name, of_size-2, "%s%c%s", outdir, DIR_SEPARATOR, file->name);
+    of_size = strlen(outdir) + strlen(file->parentdir->name) +
+                     strlen(file->name) + 20;
+    of_name = (char*) malloc (of_size);
+
+    if (extractdirs && file->parentdir && file->parentdir->name[0])
+    {
+        snprintf (of_name, of_size-2, "%s%c%s%c%s",
+                  outdir, DIR_SEPARATOR,
+                  file->parentdir->name, DIR_SEPARATOR,
+                  file->name);
+        // may need to create directory
+        p = strrchr (of_name, DIR_SEPARATOR);
+        *p = 0;
+        of_dir = of_name;
+        mkdir (of_dir, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
+        *p = DIR_SEPARATOR;
+
+    } else {
+        snprintf (of_name, of_size-2, "%s%c%s",
+                  outdir, DIR_SEPARATOR, file->name);
+    }
 
     //ifh = fopen (is3->archive_fname, "rb");
     ofh = fopen (of_name, "wb");
