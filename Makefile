@@ -1,9 +1,11 @@
 CXXFLAGS=-g -Wall -Wextra -DNDEBUG $(OPTFLAGS)
+CFLAGS=-g -Wall -Wextra -DNDEBUG $(OPTFLAGS)
 LIBS=$(OPTLIBS)
 PREFIX?=/usr/local
-CC=g++
+#CC=g++
+CC=gcc
 
-SOURCES=src/blast.c src/isextract.c src/main.cpp
+SOURCES=src/blast.c src/isextract.c src/main.c
 OBJECTS=src/blast.o src/isextract.o src/main.o
 
 TEST_SRC=$(wildcard tests/*_tests.cpp)

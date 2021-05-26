@@ -13,6 +13,7 @@ extern "C" {
 #endif
 
 #include "blast.h"
+#include <stdbool.h>
 
 typedef struct _ishield3 ishield3;
 

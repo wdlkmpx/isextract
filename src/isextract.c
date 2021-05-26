@@ -38,21 +38,18 @@ struct _is3_file
 
 struct _ishield3
 {
-    uint32_t parseDirs();
-    void     parseFiles();
-    is3_file * m_files;
-    char * m_filename;
-    FILE * file_handle;
-    uint32_t m_dataoffset;
-    uint32_t m_datasize;
-    is3_file * m_current_file;
+    is3_file * files;
+    char * archive_fname;
+    FILE * archive_fd;
+    uint32_t dataoffset;
+    uint32_t datasize;
 };
 
 // =================================================================
 
 const uint32_t signature = 0x8C655D13;
 const int32_t data_start = 255;
-const uint32_t CHUNK = 16384;
+#define CHUNK 16384
 /*const uint32_t YR_MASK  = 0xFE000000;
 const uint32_t MON_MASK = 0x01E00000;
 const uint32_t DAY_MASK = 0x001F0000;
@@ -60,8 +57,11 @@ const uint32_t HR_MASK  = 0x0000F800;
 const uint32_t MIN_MASK = 0x000007E0;
 const uint32_t SEC_MASK = 0x0000001F;*/
 
+// =================================================================
+
 static uint32_t parseDirs  (ishield3 * is3);
 static void     parseFiles (ishield3 * is3);
+static bool extractFile (ishield3 * is3, const char *find_filestr, is3_file * selected_file, const char *outdir);
 
 // blast.c callbacks
 static unsigned inf(void *how, unsigned char **buf)
@@ -79,43 +79,45 @@ static int outf(void *how, unsigned char *buf, unsigned len)
 
 // =================================================================
 
+
 ishield3 * ishield3_open (const char * filename)
 {
     uint32_t sig;
     int32_t toc_address;
     uint16_t dir_count;
-    FILE * fh;
+    FILE * fd;
 
-    fh = fopen (filename, "rb");
-    if (!fh) {
+    fd = fopen (filename, "rb");
+    if (!fd) {
         return NULL;
     }
 
     // init
     ishield3 * is3 = (ishield3*) calloc (1, sizeof(ishield3));
-    is3->file_handle  = fh;
-    is3->m_filename   = strdup (filename);
-    is3->m_dataoffset = data_start;
-    is3->m_datasize   = 0;
-    is3->m_files      = NULL;
-    is3->m_filename   = NULL;
+    is3->archive_fd  = fd;
+    is3->archive_fname   = strdup (filename);
+    is3->dataoffset = data_start;
+    is3->datasize   = 0;
+    is3->files      = NULL;
 
     // read signature
-    fread (&sig, sizeof(uint32_t), 1, is3->file_handle);
+    fread (&sig, sizeof(uint32_t), 1, is3->archive_fd);
     
     //test if we have what we think we have
-    if(sig != signature)
-        throw "Not a valid InstallShield 3 archive.";
+    if (sig != signature) {
+        fprintf (stderr, "Not a valid InstallShield 3 archive\n");
+        return NULL;
+    }
     
     //get some basic info on where stuff is in file
-    fseek (is3->file_handle, 37, SEEK_CUR);
-    fread ((void*) &toc_address, sizeof(int32_t), 1, is3->file_handle);
-
-    fseek (is3->file_handle, 4, SEEK_CUR);
-    fread ((void*) &dir_count, sizeof(uint16_t), 1, is3->file_handle);
+    fseek (is3->archive_fd, 37, SEEK_CUR);
+    fread ((void*) &toc_address, sizeof(int32_t), 1, is3->archive_fd);
+    
+    fseek (is3->archive_fd, 4, SEEK_CUR);
+    fread ((void*) &dir_count, sizeof(uint16_t), 1, is3->archive_fd);
 
     //find the toc and work out how many files we have in the archive
-    fseek (is3->file_handle, toc_address, SEEK_SET);
+    fseek (is3->archive_fd, toc_address, SEEK_SET);
 
     is3_dir * dirfiles = NULL;
     is3_dir * currentdir = NULL, * dirtemp = NULL;
@@ -144,7 +146,7 @@ ishield3 * ishield3_open (const char * filename)
         currentdir = dirtemp;
     }
 
-    fclose (is3->file_handle);
+    fclose (is3->archive_fd);
     return is3;
 }
 
@@ -152,12 +154,12 @@ ishield3 * ishield3_open (const char * filename)
 void ishield3_close (ishield3 * is3)
 {
     // free data
-    if (is3->m_filename) {
-        free (is3->m_filename);
-        is3->m_filename = NULL;
+    if (is3->archive_fname) {
+        free (is3->archive_fname);
+        is3->archive_fname = NULL;
     }
-    if (is3->m_files) {
-       is3_file * it = is3->m_files, * nextfile;
+    if (is3->files) {
+       is3_file * it = is3->files, * nextfile;
        while (it)
        {
            nextfile = it->next;
@@ -172,23 +174,23 @@ void ishield3_close (ishield3 * is3)
 }
 
 
-uint32_t parseDirs (ishield3 * is3)
+static uint32_t parseDirs (ishield3 * is3)
 {
     uint16_t fcount;
     uint16_t chksize;
     uint16_t nlen;
     
-    fread ((void*) &fcount,  sizeof(uint16_t), 1, is3->file_handle);
-    fread ((void*) &chksize, sizeof(uint16_t), 1, is3->file_handle);
-    fread ((void*) &nlen,    sizeof(uint16_t), 1, is3->file_handle);
+    fread ((void*) &fcount,  sizeof(uint16_t), 1, is3->archive_fd);
+    fread ((void*) &chksize, sizeof(uint16_t), 1, is3->archive_fd);
+    fread ((void*) &nlen,    sizeof(uint16_t), 1, is3->archive_fd);
 
     printf ("We have %u files\n", fcount);
     
     //skip the name of the dir, we just want the files
-    fseek (is3->file_handle, nlen, SEEK_CUR);
+    fseek (is3->archive_fd, nlen, SEEK_CUR);
     
     //skip to end of chunk
-    fseek (is3->file_handle, chksize - nlen - 6, SEEK_CUR);
+    fseek (is3->archive_fd, chksize - nlen - 6, SEEK_CUR);
 
     return fcount;
 }
@@ -201,46 +203,46 @@ static void parseFiles (ishield3 * is3)
     uint16_t chksize;
     uint8_t namelen;
 
-    fseek (is3->file_handle, 3, SEEK_CUR);
-    fread ((void*) &(file->uncompressed_size), sizeof(uint32_t), 1, is3->file_handle);
-    fread ((void*) &(file->compressed_size),   sizeof(uint32_t), 1, is3->file_handle);
+    fseek (is3->archive_fd, 3, SEEK_CUR);
+    fread ((void*) &(file->uncompressed_size), sizeof(uint32_t), 1, is3->archive_fd);
+    fread ((void*) &(file->compressed_size),   sizeof(uint32_t), 1, is3->archive_fd);
 
-    fseek (is3->file_handle, 4, SEEK_CUR);
-    fread ((void*) (&(file->datetime) + 2), sizeof(uint16_t), 1, is3->file_handle);
-    fread ((void*)  &(file->datetime),      sizeof(uint16_t), 1, is3->file_handle);
+    fseek (is3->archive_fd, 4, SEEK_CUR);
+    fread ((void*) (&(file->datetime) + 2), sizeof(uint16_t), 1, is3->archive_fd);
+    fread ((void*)  &(file->datetime),      sizeof(uint16_t), 1, is3->archive_fd);
 
-    fseek (is3->file_handle, 4, SEEK_CUR);
-    fread ((void*) &(chksize), sizeof(uint16_t), 1, is3->file_handle);
+    fseek (is3->archive_fd, 4, SEEK_CUR);
+    fread ((void*) &(chksize), sizeof(uint16_t), 1, is3->archive_fd);
 
-    fseek (is3->file_handle, 4, SEEK_CUR);
-    fread ((void*) &(namelen), sizeof(uint8_t), 1, is3->file_handle);
+    fseek (is3->archive_fd, 4, SEEK_CUR);
+    fread ((void*) &(namelen), sizeof(uint8_t), 1, is3->archive_fd);
 
     //read in file name, ensure null termination;
     uint8_t buffer[namelen + 1];
-    fread ((void*) buffer, sizeof(uint8_t), namelen, is3->file_handle);
+    fread ((void*) buffer, sizeof(uint8_t), namelen, is3->archive_fd);
     buffer[namelen] = '\0';
     file->name = strdup ((char*) buffer);
 
     //complete out file entry with the offset within the body.
-    file->offset = is3->m_datasize;
+    file->offset = is3->datasize;
     
-    if (!is3->m_files) {
-        is3->m_files = file;
+    if (!is3->files) {
+        is3->files = file;
     } else {
        // append
-       for (it = is3->m_files; it->next; it = it->next) { }
+       for (it = is3->files; it->next; it = it->next) { }
        it->next = file;
     }
 
     //increase body size to next offset for next file
-    is3->m_datasize += file->compressed_size;
+    is3->datasize += file->compressed_size;
     
     //skip to end of chunk
-    fseek (is3->file_handle, chksize - namelen - 30, SEEK_CUR);
+    fseek (is3->archive_fd, chksize - namelen - 30, SEEK_CUR);
 }
 
 
-bool ishield3_extractFile (ishield3 * is3, const char *find_filestr, is3_file * selected_file, const char *outdir)
+static bool extractFile (ishield3 * is3, const char *find_filestr, is3_file * selected_file, const char *outdir)
 {
     //C style IO here because its easier to make work with Blast
     is3_file * file;
@@ -251,36 +253,29 @@ bool ishield3_extractFile (ishield3 * is3, const char *find_filestr, is3_file * 
     if (selected_file) {
         file = selected_file;
     } else if (find_filestr) {
-        /// m_current_file = is3->m_files.find(filename); 
-        /// if(m_current_file != is3->m_files.end()) {
-        ///     file = *m_current_file;
-        /// } else {
-        ///     return false;
-        /// }
+        /// file = is3->files.find(filename); 
         // TODO
     }
-
-    is3->m_current_file = file;
 
     size_t of_size = strlen(outdir) + strlen(file->name) + 50;
     char * of_name = (char*) malloc (of_size + 50);
     snprintf (of_name, of_size-2, "%s%c%s", outdir, DIR_SEPARATOR, file->name);
 
-    ifh = fopen (is3->m_filename, "rb");
+    ifh = fopen (is3->archive_fname, "rb");
     ofh = fopen (of_name, "wb");
     
     if (!ifh || !ofh) {
        return false;
     }
     
-    fseek(ifh, is3->m_current_file->offset + is3->m_dataoffset, SEEK_SET);
+    fseek (ifh, file->offset + is3->dataoffset, SEEK_SET);
     
     blast(inf, ifh, outf, ofh, NULL, NULL);
     
     fclose(ifh);
     fclose(ofh);
     
-    tstamp.actime = dos2unixtime (is3->m_current_file->datetime);
+    tstamp.actime = dos2unixtime (file->datetime);
     tstamp.modtime = tstamp.actime;
     utime (of_name, &tstamp);
     
@@ -291,11 +286,11 @@ bool ishield3_extractFile (ishield3 * is3, const char *find_filestr, is3_file * 
 bool ishield3_extractAll (ishield3 * is3, const char *outdir)
 {
     bool rv = true;
-    is3_file * it = is3->m_files;
+    is3_file * it = is3->files;
     
     while (it)
     {
-        if(!ishield3_extractFile (is3, NULL, it, outdir)) {
+        if(!extractFile (is3, NULL, it, outdir)) {
             rv = false;
         }
         it = it->next;
@@ -310,7 +305,7 @@ void ishield3_listFiles (ishield3 * is3)
     //uint32_t size;
     uint32_t csize;
     time_t time;
-    is3_file * it = is3->m_files;
+    is3_file * it = is3->files;
     
     printf ("Archive contains the following files: \n");
 

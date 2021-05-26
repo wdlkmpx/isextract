@@ -1,18 +1,17 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <iostream>
 
 #include "isextract.h"
 
 void printUse()
 {
-    std::cout << "Useage is \"isextract [mode] [file] (dir)\"\n"
-              << "mode options are \'x\' for extract and \'l\' for list.\n";
+    puts ("Useage is \"isextract [mode] [file] (dir)\"\n");
+    puts ("mode options are \'x\' for extract and \'l\' for list.\n");
 }
 
 int main(int argc, char** argv)
 {
-    std::string mode;
+    const char * mode;
     const char * filepath;
     const char * outdir = "./";
     ishield3 * infile;
@@ -31,13 +30,13 @@ int main(int argc, char** argv)
     
     infile = ishield3_open (filepath);
     if (!infile) {
-        std::cout << "Error opening file\n";
+        puts ("Error opening file\n");
         return -1;
     }
     
-    if(mode == "x"){
+    if(*mode == 'x'){
         ishield3_extractAll (infile, outdir);
-    } else if(mode == "l") {
+    } else if(*mode == 'l') {
         ishield3_listFiles (infile);
     } else {
         printUse();
