@@ -1,16 +1,18 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <utime.h>
+#include <string.h>
+#include <time.h>
+
 #include "isextract.h"
 #include "dostime.h"
 
-#include <utime.h>
-#include <string.h>
-#include <iostream>
-#include <ctime>
-
-typedef struct _dir_list dirlist;
-struct _dir_list {
+typedef struct _is3_dir is3_dir;
+struct _is3_dir {
     uint32_t count;
-    dirlist * next;
+    is3_dir * next;
 };
+
 
 const uint32_t signature = 0x8C655D13;
 const int32_t data_start = 255;
@@ -37,50 +39,55 @@ int outf(void *how, unsigned char *buf, unsigned len)
 
 InstallShield::~InstallShield()
 {
-    
+    close ();
 }
 
 InstallShield::InstallShield():
 m_dataoffset(data_start),
 m_datasize(0)
 {
-    
+    m_files = NULL;
+    m_filename = NULL;
 }
 
-void InstallShield::open(std::string& filename)
+void InstallShield::open(const char * filename)
 {
     uint32_t sig;
     int32_t toc_address;
     uint16_t dir_count;
-    std::streampos pretoc;
-    m_filename = std::string(filename);
+
+    m_filename = NULL;
+    if (filename) {
+        m_filename = strdup (filename);
+    }
     
-    m_fh.open(filename.c_str(), std::ios::binary|std::ios::in);
+    file_handle = fopen (m_filename, "rb");
     
-    if(!m_fh.is_open())
+    if (!file_handle)
         throw "Could not open file.";
-    
-    m_fh.read(reinterpret_cast<char*>(&sig), sizeof(uint32_t));
+
+    fread (&sig, sizeof(uint32_t), 1, file_handle);
     
     //test if we have what we think we have
     if(sig != signature)
         throw "Not a valid InstallShield 3 archive.";
     
     //get some basic info on where stuff is in file
-    m_fh.seekg(37, std::ios_base::cur);
-    m_fh.read(reinterpret_cast<char*>(&toc_address), sizeof(int32_t));
-    m_fh.seekg(4, std::ios_base::cur);
-    m_fh.read(reinterpret_cast<char*>(&dir_count), sizeof(uint16_t));
-    
+    fseek (file_handle, 37, SEEK_CUR);
+    fread ((void*) &toc_address, sizeof(int32_t), 1, file_handle);
+
+    fseek (file_handle, 4, SEEK_CUR);
+    fread ((void*) &dir_count, sizeof(uint16_t), 1, file_handle);
+
     //find the toc and work out how many files we have in the archive
-    m_fh.seekg(toc_address, std::ios_base::beg);
-    
-    dirlist * dirfiles = NULL;
-    dirlist * currentdir = NULL, * dirtemp = NULL;
+    fseek (file_handle, toc_address, SEEK_SET);
+
+    is3_dir * dirfiles = NULL;
+    is3_dir * currentdir = NULL, * dirtemp = NULL;
 
     for(uint32_t i = 0; i < dir_count; i++)
     {
-        dirtemp = (dirlist*) calloc (1, sizeof(dirlist));
+        dirtemp = (is3_dir*) calloc (1, sizeof(is3_dir));
         dirtemp->count = parseDirs();
         if (!dirfiles) {
            dirfiles = dirtemp;
@@ -102,12 +109,26 @@ void InstallShield::open(std::string& filename)
         currentdir = dirtemp;
     }
 
-    m_fh.close();
+    fclose (file_handle);
 }
 
 void InstallShield::close()
 {
-    m_filename = "";
+    // free data
+    if (m_filename) {
+        free (m_filename);
+        m_filename = NULL;
+    }
+    if (m_files) {
+       is3_file * it = m_files, * nextfile;
+       while (it)
+       {
+           nextfile = it->next;
+           if (it->name) free (it->name);
+           free (it);
+           it = nextfile;
+       } 
+    }
 }
 
 uint32_t InstallShield::parseDirs()
@@ -116,17 +137,17 @@ uint32_t InstallShield::parseDirs()
     uint16_t chksize;
     uint16_t nlen;
     
-    m_fh.read(reinterpret_cast<char*>(&fcount), sizeof(uint16_t));
-    m_fh.read(reinterpret_cast<char*>(&chksize), sizeof(uint16_t));
-    m_fh.read(reinterpret_cast<char*>(&nlen), sizeof(uint16_t));
+    fread ((void*) &fcount,  sizeof(uint16_t), 1, file_handle);
+    fread ((void*) &chksize, sizeof(uint16_t), 1, file_handle);
+    fread ((void*) &nlen,    sizeof(uint16_t), 1, file_handle);
 
     printf ("We have %u files\n", fcount);
     
     //skip the name of the dir, we just want the files
-    m_fh.seekg(nlen, std::ios_base::cur);
+    fseek (file_handle, nlen, SEEK_CUR);
     
     //skip to end of chunk
-    m_fh.seekg(chksize - nlen - 6, std::ios_base::cur);
+    fseek (file_handle, chksize - nlen - 6, SEEK_CUR);
 
     return fcount;
 }
@@ -134,106 +155,130 @@ uint32_t InstallShield::parseDirs()
 //uint AccumulatedData = 0;
 void InstallShield::parseFiles()
 {
-    t_file_entry file;
+    is3_file * file = (is3_file*) calloc (1, sizeof(is3_file));
+    is3_file * it;
     uint16_t chksize;
     uint8_t namelen;
-    
-    m_fh.seekg(3, std::ios_base::cur);
-    m_fh.read(reinterpret_cast<char*>(&file.second.uncompressed_size), sizeof(uint32_t));
-    m_fh.read(reinterpret_cast<char*>(&file.second.compressed_size), sizeof(uint32_t));
-    m_fh.seekg(4, std::ios_base::cur);
-    m_fh.read(reinterpret_cast<char*>(&file.second.datetime) + 2, sizeof(uint16_t));
-    m_fh.read(reinterpret_cast<char*>(&file.second.datetime), sizeof(uint16_t));
-    m_fh.seekg(4, std::ios_base::cur);
-    m_fh.read(reinterpret_cast<char*>(&chksize), sizeof(uint16_t));
-    m_fh.seekg(4, std::ios_base::cur);
-    m_fh.read(reinterpret_cast<char*>(&namelen), sizeof(uint8_t));
-    
+
+    fseek (file_handle, 3, SEEK_CUR);
+    fread ((void*) &(file->uncompressed_size), sizeof(uint32_t), 1, file_handle);
+    fread ((void*) &(file->compressed_size),   sizeof(uint32_t), 1, file_handle);
+
+    fseek (file_handle, 4, SEEK_CUR);
+    fread ((void*) (&(file->datetime) + 2), sizeof(uint16_t), 1, file_handle);
+    fread ((void*)  &(file->datetime),      sizeof(uint16_t), 1, file_handle);
+
+    fseek (file_handle, 4, SEEK_CUR);
+    fread ((void*) &(chksize), sizeof(uint16_t), 1, file_handle);
+
+    fseek (file_handle, 4, SEEK_CUR);
+    fread ((void*) &(namelen), sizeof(uint8_t), 1, file_handle);
+
     //read in file name, ensure null termination;
     uint8_t buffer[namelen + 1];
-    m_fh.read(reinterpret_cast<char*>(buffer), namelen);
+    fread ((void*) buffer, sizeof(uint8_t), namelen, file_handle);
     buffer[namelen] = '\0';
-    file.first = reinterpret_cast<char*>(buffer);
-    
+    file->name = strdup ((char*) buffer);
+
     //complete out file entry with the offset within the body.
-    file.second.offset = m_datasize;
+    file->offset = m_datasize;
     
-    m_files.insert(file);
-    
+    if (!m_files) {
+        m_files = file;
+    } else {
+       // append
+       for (it = m_files; it->next; it = it->next) { }
+       it->next = file;
+    }
+
     //increase body size to next offset for next file
-    m_datasize += file.second.compressed_size;
+    m_datasize += file->compressed_size;
     
     //skip to end of chunk
-    m_fh.seekg(chksize - namelen - 30, std::ios_base::cur);
+    fseek (file_handle, chksize - namelen - 30, SEEK_CUR);
 }
 
-bool InstallShield::extractFile(const std::string& filename, const std::string& dir)
+bool InstallShield::extractFile (const char *find_filestr, is3_file * selected_file, const char *outdir)
 {
     //C style IO here because its easier to make work with Blast
-    t_file_entry file;
+    is3_file * file;
     FILE* ifh;
     FILE* ofh;
     struct utimbuf tstamp;
+
+    if (selected_file) {
+        file = selected_file;
+    } else if (find_filestr) {
+        /// m_current_file = m_files.find(filename); 
+        /// if(m_current_file != m_files.end()) {
+        ///     file = *m_current_file;
+        /// } else {
+        ///     return false;
+        /// }
+        // TODO
+    }
+
+    m_current_file = file;
+
+    size_t of_size = strlen(outdir) + strlen(file->name) + 50;
+    char * of_name = (char*) malloc (of_size + 50);
+    snprintf (of_name, of_size-2, "%s%c%s", outdir, DIR_SEPARATOR, file->name);
+
+    ifh = fopen (m_filename, "rb");
+    ofh = fopen (of_name, "wb");
     
-    m_current_file = m_files.find(filename);
-    
-    if(m_current_file != m_files.end()) {
-        file = *m_current_file;
-    } else {
-        return false;
+    if (!ifh || !ofh) {
+       return false;
     }
     
-    ifh = fopen(m_filename.c_str(), "rb");
-    ofh = fopen((dir + DIR_SEPARATOR + filename).c_str(), "wb");
-    
-    if(!ifh || !ofh) return false;
-    
-    fseek(ifh, m_current_file->second.offset + m_dataoffset, SEEK_SET);
+    fseek(ifh, m_current_file->offset + m_dataoffset, SEEK_SET);
     
     blast(inf, ifh, outf, ofh, NULL, NULL);
     
     fclose(ifh);
     fclose(ofh);
     
-    tstamp.actime = dos2unixtime(m_current_file->second.datetime);
+    tstamp.actime = dos2unixtime(m_current_file->datetime);
     tstamp.modtime = tstamp.actime;
-    utime((dir + DIR_SEPARATOR + filename).c_str(), &tstamp);
+    utime (of_name, &tstamp);
     
     return true;
 }
 
-bool InstallShield::extractAll(const std::string& dir)
+bool InstallShield::extractAll(const char *outdir)
 {
-    t_file_iter it = m_files.begin();
     bool rv = true;
+    is3_file * it = m_files;
     
-    while(it != m_files.end()) {
-        if(!extractFile(it->first, dir)) rv = false;
-        
-        it++;
+    while (it)
+    {
+        if(!extractFile (NULL, it, outdir)) {
+            rv = false;
+        }
+        it = it->next;
     }
-    
     return rv;
 }
 
 void InstallShield::listFiles()
 {
-    t_file_iter it = m_files.begin();
     const char * fname;
     uint32_t size;
     uint32_t csize;
     time_t time;
+    is3_file * it = m_files;
     
     printf ("Archive contains the following files: \n");
-    
-    while(it != m_files.end()) {
-        time = dos2unixtime(it->second.datetime);
-        fname = it->first.c_str();
-        size = it->second.uncompressed_size;
-        csize = it->second.compressed_size;
+
+    while (it)
+    {
+        time = dos2unixtime(it->datetime);
+        fname = it->name;
+        size = it->uncompressed_size;
+        csize = it->compressed_size;
         
         printf ("%s %u %s\n", fname, csize, ctime(&time));
         
-        it++;
+        it = it->next;
     }
 }

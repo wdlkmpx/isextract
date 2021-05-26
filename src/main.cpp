@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include "isextract.h"
 #include <iostream>
 
@@ -10,8 +11,8 @@ void printUse()
 int main(int argc, char** argv)
 {
     std::string mode;
-    std::string filepath;
-    std::string outdir = "./";
+    const char * filepath;
+    const char * outdir = "./";
     InstallShield infile;
     
     if(argc < 3) {
