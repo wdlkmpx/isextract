@@ -2,6 +2,9 @@
 #include <stdlib.h>
 
 #include "isextract.h"
+#if defined(DEBUG) && defined(__GLIBC__)
+#include <mcheck.h>
+#endif
 
 void printUse()
 {
@@ -11,6 +14,11 @@ void printUse()
 
 int main(int argc, char** argv)
 {
+
+#if defined(DEBUG) && defined(__GLIBC__)
+   mtrace();
+#endif
+
     const char * mode;
     const char * filepath;
     const char * outdir = "./";

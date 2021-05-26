@@ -34,10 +34,7 @@ build:
 
 # The Cleaner
 clean:
-	rm -rf $(OBJECTS) $(TESTS)
-	rm -f tests/tests.log
-	find . -name "*.gc*" -exec rm {} \;
-	rm -rf `find . -name "*.dSYM" -print`
+	rm -rf $(OBJECTS) $(TESTS) $(TARGET) mtrace*.txt
 
 # The Install
 install: all
