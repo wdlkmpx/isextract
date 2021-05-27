@@ -19,6 +19,12 @@
 #include <stdint.h>
 #endif
 
+const uint32_t signature32 = 0x8C655D13;
+/* Files begin with bytes 13 5D 65 8C 3A 01 02 00 */
+const uint8_t signature[8] = { 0x13, 0x5D, 0x65, 0x8C, 0x3A, 0x01, 0x02, 0x00 };
+const int32_t data_start = 255;
+#define CHUNK 16384
+
 // =================================================================
 
 typedef struct _is3_dir is3_dir;
@@ -44,8 +50,8 @@ struct _is3_file
 
 typedef struct __attribute__((__packed__)) _is3_header
 {
-    uint32_t signature;
-    /* */ uint8_t ignore0[8];
+    uint8_t signature[8];
+    /* */ uint8_t ignore0[4];
     uint16_t file_count;
     /* */ uint8_t ignore1[4];
     uint32_t archive_size;
@@ -66,18 +72,6 @@ struct _ishield3
     uint32_t datasize;
     is3_header header;
 };
-
-// =================================================================
-
-const uint32_t signature = 0x8C655D13;
-const int32_t data_start = 255;
-#define CHUNK 16384
-/*const uint32_t YR_MASK  = 0xFE000000;
-const uint32_t MON_MASK = 0x01E00000;
-const uint32_t DAY_MASK = 0x001F0000;
-const uint32_t HR_MASK  = 0x0000F800;
-const uint32_t MIN_MASK = 0x000007E0;
-const uint32_t SEC_MASK = 0x0000001F;*/
 
 // =================================================================
 
@@ -130,8 +124,9 @@ ishield3 * ishield3_open (const char * filename)
     }
     
     //test if we have what we think we have
-    if (is3->header.signature != signature) {
+    if (memcmp (is3->header.signature, signature, sizeof(signature)) != 0) {
         fprintf (stderr, "Not a valid InstallShield 3 archive\n");
+        ishield3_close (is3);
         return NULL;
     }
 
