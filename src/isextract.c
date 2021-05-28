@@ -305,6 +305,12 @@ static bool extractFile (ishield3 * is3, const char *find_filestr, is3_file * se
                   outdir, DIR_SEPARATOR,
                   file->parentdir->name, DIR_SEPARATOR,
                   file->name);
+#ifndef _WIN32
+        // subdirecties contain '\': dir\subdir
+        for (p = of_name; *p; p++) {
+            if (*p == '\\') *p = '/';
+        }
+#endif
         // may need to create directory
         p = strrchr (of_name, DIR_SEPARATOR);
         *p = 0;
