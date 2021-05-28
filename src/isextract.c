@@ -367,6 +367,7 @@ void ishield3_listFiles (ishield3 * is3)
     uint32_t csize;
     time_t time;
     is3_file * it = is3->files;
+    char timestr[256];
     
     printf ("Archive contains the following files: \n");
 
@@ -376,12 +377,14 @@ void ishield3_listFiles (ishield3 * is3)
         fname = it->name;
         //size = it->uncompressed_size;
         csize = it->compressed_size;
+        strftime (timestr, sizeof(timestr)-1, // ctime(&time)
+                  "%Y-%m-%d %H:%M:%S\n", localtime(&time));
 
         if (it->parentdir && it->parentdir->name[0]) {
             // ctime() adds a '\n'
-            printf ("%s\\%s %u %s", it->parentdir->name, fname, csize, ctime(&time));
+            printf ("%s\\%s - %u - %s", it->parentdir->name, fname, csize, timestr);
         } else {
-            printf ("%s %u %s", fname, csize, ctime(&time));
+            printf ("%s - %u - %s", fname, csize, timestr);
         }
         it = it->next;
     }
