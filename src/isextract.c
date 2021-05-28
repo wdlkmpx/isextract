@@ -31,7 +31,6 @@ typedef struct _is3_dir is3_dir;
 struct _is3_dir {
     uint32_t file_count;
     char * name;
-    is3_dir * next;
 };
 
 
@@ -75,8 +74,8 @@ struct _ishield3
 
 // =================================================================
 
-static is3_dir * parseDirs  (ishield3 * is3);
-static void      parseFiles (ishield3 * is3, is3_dir * dir);
+static void parseDirs  (ishield3 * is3, is3_dir * dir);
+static void parseFiles (ishield3 * is3, is3_dir * dir);
 static bool extractFile (ishield3 * is3, const char *find_filestr, is3_file * selected_file, const char *outdir);
 
 // blast.c callbacks
@@ -133,25 +132,18 @@ ishield3 * ishield3_open (const char * filename)
     //find the toc and work out how many files we have in the archive
     fseek (is3->archive_fd, is3->header.toc_address, SEEK_SET);
 
-    is3_dir * currentdir = NULL, * dirtemp = NULL;
+    is3->directories = (is3_dir *) malloc (is3->header.dir_count * sizeof(is3_dir));
 
     for (uint32_t i = 0; i < is3->header.dir_count; i++)
     {
-        dirtemp = parseDirs(is3);
-        if (!is3->directories) {
-           is3->directories = dirtemp; /* first directory */
-        } else if (currentdir) {
-           currentdir->next = dirtemp;
-        }
-        currentdir = dirtemp;
+        parseDirs (is3, &(is3->directories[i]));
     }
 
     //parse the file entries in the toc to get filenames, size and location
-    currentdir = is3->directories;
-    for (; currentdir; currentdir = currentdir->next)
+    for (uint32_t i = 0; i < is3->header.dir_count; i++)
     {
-        for(uint32_t j = 0; j < currentdir->file_count; j++) {
-            parseFiles (is3, currentdir);
+        for (uint32_t j = 0; j < is3->directories[i].file_count; j++) {
+            parseFiles (is3, &(is3->directories[i]));
         }
     }
 
@@ -178,14 +170,11 @@ void ishield3_close (ishield3 * is3)
        is3->files = NULL;
     }
     if (is3->directories) {
-       is3_dir * it = is3->directories, * nextdir;
-       while (it)
-       {
-           nextdir = it->next;
-           if (it->name) free (it->name);
-           free (it);
-           it = nextdir;
+       for (uint32_t i = 0; i < is3->header.dir_count; i++) {
+           if (is3->directories[i].name)
+               free (is3->directories[i].name);
        }
+       free (is3->directories);
        is3->directories = NULL;
     }
     if (is3->archive_fd) {
@@ -197,12 +186,11 @@ void ishield3_close (ishield3 * is3)
 }
 
 
-static is3_dir * parseDirs (ishield3 * is3)
+static void parseDirs  (ishield3 * is3, is3_dir * dir)
 {
     uint16_t fcount;
     uint16_t chksize;
     uint16_t nlen;
-    is3_dir * dir = (is3_dir*) calloc (1, sizeof(is3_dir));
 
     fread ((void*) &fcount,  sizeof(uint16_t), 1, is3->archive_fd);
     fread ((void*) &chksize, sizeof(uint16_t), 1, is3->archive_fd);
@@ -221,7 +209,6 @@ static is3_dir * parseDirs (ishield3 * is3)
     } else {
         printf ("%s: %u files\n", dir->name, dir->file_count);
     }
-    return dir;
 }
 
 
