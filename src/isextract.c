@@ -27,14 +27,9 @@ const int32_t data_start = 255;
 
 // =================================================================
 
-typedef struct _is3_dir is3_dir;
-struct _is3_dir {
-    uint32_t file_count;
-    char * name;
-};
-
-
 typedef struct _is3_file is3_file;
+typedef struct _is3_dir is3_dir;
+
 struct _is3_file
 {
     char * name;
@@ -43,7 +38,12 @@ struct _is3_file
     uint32_t offset;
     uint32_t datetime;
     is3_dir  * parentdir;
-    is3_file * next;
+};
+
+struct _is3_dir {
+    uint32_t file_count;
+    char * name;
+    is3_file * files;
 };
 
 
@@ -63,8 +63,7 @@ typedef struct __attribute__((__packed__)) _is3_header
 
 struct _ishield3
 {
-    is3_dir  * directories;
-    is3_file * files;
+    is3_dir * directories;
     char * archive_fname;
     FILE * archive_fd;
     uint32_t dataoffset;
@@ -75,7 +74,7 @@ struct _ishield3
 // =================================================================
 
 static void parseDirs  (ishield3 * is3, is3_dir * dir);
-static void parseFiles (ishield3 * is3, is3_dir * dir);
+static void parseFiles (ishield3 * is3, is3_file * file);
 static bool extractFile (ishield3 * is3, const char *find_filestr, is3_file * selected_file, const char *outdir);
 
 // blast.c callbacks
@@ -111,7 +110,6 @@ ishield3 * ishield3_open (const char * filename)
     is3->archive_fname   = strdup (filename);
     is3->dataoffset = data_start;
     is3->datasize   = 0;
-    is3->files      = NULL;
 
     //get some basic info on where stuff is in file
     read_bytes = fread (&(is3->header), 1, sizeof(is3->header), is3->archive_fd);
@@ -132,18 +130,24 @@ ishield3 * ishield3_open (const char * filename)
     //find the toc and work out how many files we have in the archive
     fseek (is3->archive_fd, is3->header.toc_address, SEEK_SET);
 
+    is3_dir * dir;
+    uint32_t i, j;
     is3->directories = (is3_dir *) malloc (is3->header.dir_count * sizeof(is3_dir));
 
-    for (uint32_t i = 0; i < is3->header.dir_count; i++)
+    for (i = 0; i < is3->header.dir_count; i++)
     {
         parseDirs (is3, &(is3->directories[i]));
     }
 
     //parse the file entries in the toc to get filenames, size and location
-    for (uint32_t i = 0; i < is3->header.dir_count; i++)
+    for (i = 0; i < is3->header.dir_count; i++)
     {
-        for (uint32_t j = 0; j < is3->directories[i].file_count; j++) {
-            parseFiles (is3, &(is3->directories[i]));
+        dir = &(is3->directories[i]);
+        dir->files = (is3_file*) malloc (dir->file_count * sizeof(is3_file));
+        memset ((void*) dir->files, 0, sizeof(dir->files));
+        for (j = 0; j < dir->file_count; j++) {
+            dir->files[j].parentdir = dir;
+            parseFiles (is3, &(dir->files[j]));
         }
     }
 
@@ -154,29 +158,33 @@ ishield3 * ishield3_open (const char * filename)
 void ishield3_close (ishield3 * is3)
 {
     // free data
+    is3_dir * dir;
+    uint32_t i, j;
+
     if (is3->archive_fname) {
         free (is3->archive_fname);
         is3->archive_fname = NULL;
     }
-    if (is3->files) {
-       is3_file * it = is3->files, * nextfile;
-       while (it)
+    if (is3->directories)
+    {
+       for (i = 0; i < is3->header.dir_count; i++)
        {
-           nextfile = it->next;
-           if (it->name) free (it->name);
-           free (it);
-           it = nextfile;
-       }
-       is3->files = NULL;
-    }
-    if (is3->directories) {
-       for (uint32_t i = 0; i < is3->header.dir_count; i++) {
-           if (is3->directories[i].name)
-               free (is3->directories[i].name);
+           dir = &(is3->directories[i]);
+           if (dir->name) {
+               free (dir->name);
+           }
+           for (j = 0; j < dir->file_count; j++) {
+               if (dir->files[j].name)
+                  free (dir->files[j].name);
+           }
+           if (dir->files) {
+              free (dir->files);
+           }
        }
        free (is3->directories);
        is3->directories = NULL;
     }
+
     if (is3->archive_fd) {
        fclose (is3->archive_fd);
     }
@@ -197,9 +205,9 @@ static void parseDirs  (ishield3 * is3, is3_dir * dir)
     fread ((void*) &nlen,    sizeof(uint16_t), 1, is3->archive_fd);
 
     dir->name = (char *) malloc (sizeof(uint8_t) * nlen + 3);
-    dir->name[nlen] = 0;
     fread ((void*) dir->name, sizeof(uint8_t), nlen, is3->archive_fd);
-    
+    dir->name[nlen] = 0;
+
     //skip to end of chunk
     fseek (is3->archive_fd, chksize - nlen - 6, SEEK_CUR);
 
@@ -212,10 +220,8 @@ static void parseDirs  (ishield3 * is3, is3_dir * dir)
 }
 
 
-static void parseFiles (ishield3 * is3, is3_dir * dir)
+static void parseFiles (ishield3 * is3, is3_file * file)
 {
-    is3_file * file = (is3_file*) calloc (1, sizeof(is3_file));
-    is3_file * it;
     uint16_t chksize;
     uint16_t date1, date2;
     uint8_t namelen;
@@ -235,9 +241,6 @@ static void parseFiles (ishield3 * is3, is3_dir * dir)
     fseek (is3->archive_fd, 4, SEEK_CUR);
     fread ((void*) &(namelen), sizeof(uint8_t), 1, is3->archive_fd);
 
-    if (dir) {
-        file->parentdir = dir;
-    }
 
     //read in file name, ensure null termination;
     file->name = (char *) malloc (sizeof(uint8_t) * namelen + 3);
@@ -246,15 +249,6 @@ static void parseFiles (ishield3 * is3, is3_dir * dir)
 
     //complete out file entry with the offset within the body.
     file->offset = is3->datasize;
-
-    file->next = NULL;
-    if (!is3->files) {
-        is3->files = file; /* first file */
-    } else {
-       // append
-       for (it = is3->files; it->next; it = it->next) { }
-       it->next = file;
-    }
 
     //increase body size to next offset for next file
     is3->datasize += file->compressed_size;
@@ -334,14 +328,20 @@ static bool extractFile (ishield3 * is3, const char *find_filestr, is3_file * se
 bool ishield3_extractAll (ishield3 * is3, const char *outdir)
 {
     bool rv = true;
-    is3_file * it = is3->files;
-    
-    while (it)
+    is3_dir * dir;
+    is3_file * file;
+    uint32_t i, j;
+
+    for (i = 0; i < is3->header.dir_count; i++)
     {
-        if(!extractFile (is3, NULL, it, outdir)) {
-            rv = false;
+        dir = &(is3->directories[i]);
+        for (j = 0; j < dir->file_count; j++)
+        {
+            file = &(dir->files[j]);
+            if(!extractFile (is3, NULL, file, outdir)) {
+                rv = false;
+            }
         }
-        it = it->next;
     }
     return rv;
 }
@@ -353,26 +353,33 @@ void ishield3_listFiles (ishield3 * is3)
     //uint32_t size;
     uint32_t csize;
     time_t time;
-    is3_file * it = is3->files;
     char timestr[256];
     
+    is3_dir * dir;
+    is3_file * file;
+    uint32_t i, j;
+
     printf ("Archive contains the following files: \n");
 
-    while (it)
+    for (i = 0; i < is3->header.dir_count; i++)
     {
-        time = dos2unixtime(it->datetime);
-        fname = it->name;
-        //size = it->uncompressed_size;
-        csize = it->compressed_size;
-        strftime (timestr, sizeof(timestr)-1, // ctime(&time)
+        dir = &(is3->directories[i]);
+        for (j = 0; j < dir->file_count; j++)
+        {
+            file = &(dir->files[j]);
+            time = dos2unixtime(file->datetime);
+            fname = file->name;
+            //size = file->uncompressed_size;
+            csize = file->compressed_size;
+            strftime (timestr, sizeof(timestr)-1, // ctime(&time)
                   "%Y-%m-%d %H:%M:%S\n", localtime(&time));
 
-        if (it->parentdir && it->parentdir->name[0]) {
-            // ctime() adds a '\n'
-            printf ("%s\\%s - %u - %s", it->parentdir->name, fname, csize, timestr);
-        } else {
-            printf ("%s - %u - %s", fname, csize, timestr);
+            if (file->parentdir && file->parentdir->name[0]) {
+               // ctime() adds a '\n'
+               printf ("%s\\%s - %u - %s", file->parentdir->name, fname, csize, timestr);
+            } else {
+               printf ("%s - %u - %s", fname, csize, timestr);
+            }
         }
-        it = it->next;
     }
 }
