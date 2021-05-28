@@ -30,9 +30,13 @@ const int32_t data_start = 255;
 typedef struct _is3_file is3_file;
 typedef struct _is3_dir is3_dir;
 
+// name length: uint8_t
+// WINE       : MAX 131 chars. ICOMP.EXE segfaults with 132+
+#define IS3_MAX_FN_LENGTH 255 /* UCHAR_MAX - uint8_t */
+
 struct _is3_file
 {
-    char * name;
+    char name[IS3_MAX_FN_LENGTH];
     uint32_t compressed_size;
     uint32_t uncompressed_size;
     uint32_t offset;
@@ -42,7 +46,7 @@ struct _is3_file
 
 struct _is3_dir {
     uint32_t file_count;
-    char * name;
+    char name[IS3_MAX_FN_LENGTH];
     is3_file * files;
 };
 
@@ -159,7 +163,7 @@ void ishield3_close (ishield3 * is3)
 {
     // free data
     is3_dir * dir;
-    uint32_t i, j;
+    uint32_t i;
 
     if (is3->archive_fname) {
         free (is3->archive_fname);
@@ -170,13 +174,6 @@ void ishield3_close (ishield3 * is3)
        for (i = 0; i < is3->header.dir_count; i++)
        {
            dir = &(is3->directories[i]);
-           if (dir->name) {
-               free (dir->name);
-           }
-           for (j = 0; j < dir->file_count; j++) {
-               if (dir->files[j].name)
-                  free (dir->files[j].name);
-           }
            if (dir->files) {
               free (dir->files);
            }
@@ -198,13 +195,13 @@ static void parseDirs  (ishield3 * is3, is3_dir * dir)
 {
     uint16_t fcount;
     uint16_t chksize;
-    uint16_t nlen;
+    uint8_t nlen, unk;
 
     fread ((void*) &fcount,  sizeof(uint16_t), 1, is3->archive_fd);
     fread ((void*) &chksize, sizeof(uint16_t), 1, is3->archive_fd);
-    fread ((void*) &nlen,    sizeof(uint16_t), 1, is3->archive_fd);
+    fread ((void*) &nlen,    sizeof(uint8_t), 1, is3->archive_fd);
+    fread ((void*) &unk,     sizeof(uint8_t), 1, is3->archive_fd);
 
-    dir->name = (char *) malloc (sizeof(uint8_t) * nlen + 3);
     fread ((void*) dir->name, sizeof(uint8_t), nlen, is3->archive_fd);
     dir->name[nlen] = 0;
 
@@ -243,9 +240,8 @@ static void parseFiles (ishield3 * is3, is3_file * file)
 
 
     //read in file name, ensure null termination;
-    file->name = (char *) malloc (sizeof(uint8_t) * namelen + 3);
-    file->name[namelen] = 0;
     fread ((void*) file->name, sizeof(uint8_t), namelen, is3->archive_fd);
+    file->name[namelen] = 0;
 
     //complete out file entry with the offset within the body.
     file->offset = is3->datasize;
