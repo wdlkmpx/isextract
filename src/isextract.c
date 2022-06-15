@@ -3,20 +3,16 @@
 #include <stdlib.h>
 #include <utime.h>
 #include <string.h>
-#include <stdint.h>
-
 #include <sys/stat.h>
+#include <inttypes.h>
 
 #include "isextract.h"
 #include "dostime.h"
 
-
 #ifdef _WIN32
 #define DIR_SEPARATOR '\\'
-#include "win32/stdint.h"
 #else
 #define DIR_SEPARATOR '/'
-#include <stdint.h>
 #endif
 
 const uint32_t signature32 = 0x8C655D13;
